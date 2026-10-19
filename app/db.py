@@ -7,8 +7,11 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 def _database_url() -> str:
     url = os.environ.get("DATABASE_URL", "sqlite:///./hub.db")
     # Render and Heroku hand out postgres://, SQLAlchemy wants postgresql://
-    if url.startswith("postgres://"):
-        url = "postgresql://" + url[len("postgres://"):]
+    # Render hands out postgres:// or postgresql://. SQLAlchemy 2.1 maps a bare
+    # postgresql:// to the psycopg (v3) driver, so name the installed psycopg2 driver explicitly.
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            url = "postgresql+psycopg2://" + url[len(prefix):]
     return url
 
 
