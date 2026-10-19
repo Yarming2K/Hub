@@ -13,7 +13,8 @@ def _database_url() -> str:
 
 
 DATABASE_URL = _database_url()
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+# Fail fast with a clear error instead of hanging forever if the database can't be reached
+_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {"connect_timeout": 10}
 
 engine = create_engine(DATABASE_URL, connect_args=_connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

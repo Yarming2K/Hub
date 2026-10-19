@@ -37,7 +37,13 @@ def sniff_type(data: bytes) -> str | None:
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+from sqlalchemy.engine import make_url as _make_url  # noqa: E402
+from .db import DATABASE_URL as _DB_URL  # noqa: E402
+
+_u = _make_url(_DB_URL)
+print(f"[hub] connecting to {_u.get_backend_name()} database at {_u.host or 'local file'}", flush=True)
 migrate()
+print("[hub] database ready", flush=True)
 
 app = FastAPI(title="Hub", version="0.1.0")
 
