@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #eceeea;
+  --surface: #f7f8f5;
+  --ink: #1f2428;
+  --muted: #646d73;
+  --line: #cdd2cf;
+  --amber: #f2a900;
+  --amber-ink: #1f2428;
+  --danger: #b8401f;
+  --focus: #1f2428;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1e21;
+    --surface: #22272b;
+    --ink: #e6e8e4;
+    --muted: #98a0a5;
+    --line: #353c41;
+    --danger: #f08a6a;
+    --focus: #f2a900;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 16px/1.45 "Archivo", system-ui, sans-serif;
+  font-variation-settings: "wdth" 100;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wide { font-variation-settings: "wdth" 125; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- layout ---------- */
+.app { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
+aside {
+  border-right: 1px solid var(--line);
+  padding: 20px 14px;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+main { padding: 28px clamp(16px, 4vw, 48px) 80px; max-width: 860px; width: 100%; }
+
+.brand { font-weight: 800; font-size: 22px; letter-spacing: -0.01em; padding: 0 10px 18px; }
+.nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.nav button {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  background: none; border: 0; border-radius: var(--radius);
+  padding: 9px 10px; text-align: left;
+}
+.nav button:hover { background: var(--surface); }
+.nav button[aria-current="true"] { background: var(--ink); color: var(--bg); }
+.nav .count { margin-left: auto; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.nav button[aria-current="true"] .count { color: inherit; opacity: .7; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.nav-group { margin: 22px 10px 6px; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+.link-btn { background: none; border: 0; padding: 2px 4px; color: var(--ink); font-weight: 600; font-size: 14px; border-radius: 4px; }
+.link-btn:hover { text-decoration: underline; }
+.paused { opacity: .55; }
+.add-proj-item { display: none; }
+
+/* ---------- headline ---------- */
+.view-title { font-size: 15px; color: var(--muted); margin: 0 0 6px; font-weight: 500; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.next {
+  font-size: clamp(28px, 4.6vw, 44px);
+  line-height: 1.08; font-weight: 750; letter-spacing: -0.015em;
+  margin: 0 0 24px; border: 0; background: none; width: 100%; resize: none; padding: 0;
+  overflow: hidden;
+}
+textarea.next:hover { background: var(--surface); }
+textarea.next::placeholder { color: var(--muted); opacity: .6; }
+.next-mark { display: inline-block; background: var(--amber); color: var(--amber-ink); padding: 1px 8px; border-radius: 4px; font-weight: 700; font-size: 13px; }
+
+.nextlist { list-style: none; margin: 0 0 32px; padding: 0; border-top: 1px solid var(--line); }
+.nextlist button {
+  width: 100%; display: grid; grid-template-columns: 10px 1fr; gap: 14px; align-items: baseline;
+  background: none; border: 0; border-bottom: 1px solid var(--line); padding: 14px 4px; text-align: left;
+}
+.nextlist button:hover { background: var(--surface); }
+.nextlist .swatch { transform: translateY(-1px); }
+.nextlist strong { display: block; font-size: 14px; font-weight: 600; color: var(--muted); }
+.nextlist span.step { font-size: 20px; font-weight: 650; line-height: 1.25; font-variation-settings: "wdth" 112; }
+.nextlist .empty-step { color: var(--muted); font-weight: 400; }
+
+/* ---------- project meta ---------- */
+.meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.meta select, .meta input[type=color] {
+  border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 8px; font-size: 14px;
+}
+.meta input[type=color] { width: 34px; height: 30px; padding: 2px; }
+.name-input { font-size: 15px; font-weight: 600; border: 0; background: none; padding: 2px 4px; border-radius: 4px; min-width: 4ch; max-width: 100%; field-sizing: content; }
+.name-input:hover { background: var(--surface); }
+
+/* ---------- quick add ---------- */
+.add {
+  display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px;
+  margin-bottom: 8px;
+}
+.add input[type=text] { flex: 1 1 220px; border: 0; background: none; padding: 8px 10px; font-size: 17px; min-width: 0; }
+.add input[type=text]:focus-visible { outline: none; }
+.add:focus-within { border-color: var(--ink); }
+.chip {
+  border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 4px 12px; font-size: 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.chip[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); font-weight: 600; }
+.chip input[type=date] { border: 0; background: none; font-size: 14px; padding: 0; width: 8.5em; }
+.primary { background: var(--ink); color: var(--bg); border: 0; border-radius: var(--radius); padding: 8px 16px; font-weight: 600; }
+.hint { color: var(--muted); font-size: 13px; margin: 0 0 22px 4px; }
+
+/* ---------- task list ---------- */
+.tasks { list-style: none; margin: 0; padding: 0; }
+.task {
+  display: grid; grid-template-columns: 26px 1fr auto; gap: 12px; align-items: start;
+  padding: 11px 4px; border-bottom: 1px solid var(--line); position: relative;
+}
+.task.high::before { content: ""; position: absolute; left: -10px; top: 12px; bottom: 12px; width: 4px; border-radius: 2px; background: var(--amber); }
+.check {
+  width: 22px; height: 22px; margin-top: 1px; border: 2px solid var(--ink); border-radius: 5px; background: none; padding: 0;
+  display: grid; place-items: center;
+}
+.check svg { opacity: 0; }
+.task.done .check { background: var(--ink); }
+.task.done .check svg { opacity: 1; color: var(--bg); }
+.task.done .title { color: var(--muted); text-decoration: line-through; }
+.title { border: 0; background: none; padding: 0; width: 100%; font-size: 17px; line-height: 1.4; }
+.title:hover { background: var(--surface); }
+.sub { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: var(--muted); margin-top: 2px; }
+.sub .tag { display: inline-flex; align-items: center; gap: 6px; }
+.sub .overdue { color: var(--danger); font-weight: 600; }
+.sub .due-today { color: var(--ink); font-weight: 600; }
+.actions { display: flex; gap: 2px; }
+.icon-btn { background: none; border: 0; border-radius: 4px; padding: 4px 8px; color: var(--muted); font-size: 13.5px; }
+.icon-btn:hover { background: var(--surface); color: var(--ink); }
+.icon-btn[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
+@media (hover: hover) {
+  .task .actions { opacity: 0; }
+  .task:hover .actions, .task:focus-within .actions { opacity: 1; }
+}
+
+.section-h { font-size: 15px; font-weight: 600; color: var(--muted); margin: 30px 0 4px; display: flex; justify-content: space-between; align-items: center; }
+.empty { color: var(--muted); padding: 22px 4px; border-bottom: 1px solid var(--line); }
+
+.notes { width: 100%; min-height: 90px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 10px 12px; resize: vertical; line-height: 1.5; }
+.danger-btn { background: none; border: 0; color: var(--danger); font-size: 14px; padding: 4px 0; margin-top: 18px; }
+
+/* ---------- attachments ---------- */
+.files-btn { background: none; border: 0; padding: 0; color: var(--ink); font-size: 13.5px; font-weight: 600; display: inline-flex; gap: 4px; align-items: center; border-radius: 4px; }
+.files-btn:hover { text-decoration: underline; }
+.files { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.file {
+  position: relative; width: 112px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden;
+}
+.file > button.open { display: block; width: 100%; border: 0; padding: 0; background: none; text-align: left; }
+.file .thumb { width: 100%; height: 84px; object-fit: cover; display: block; background: var(--bg); }
+.file .pdf { height: 84px; display: grid; place-items: center; background: var(--bg); font-weight: 800; font-size: 20px; color: var(--danger); font-variation-settings: "wdth" 125; }
+.file .fname { font-size: 12.5px; padding: 5px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.file .remove {
+  position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0;
+  background: var(--ink); color: var(--bg); font-size: 15px; line-height: 1; display: grid; place-items: center; padding: 0;
+}
+@media (hover: hover) { .file .remove { opacity: 0; } .file:hover .remove, .file:focus-within .remove { opacity: 1; } }
+.dropzone {
+  width: 112px; min-height: 112px; border: 2px dashed var(--line); border-radius: var(--radius); background: none;
+  color: var(--muted); font-size: 13.5px; padding: 8px; display: grid; place-items: center; text-align: center;
+}
+.dropzone:hover { border-color: var(--ink); color: var(--ink); }
+.drag-over { outline: 2px dashed var(--amber); outline-offset: 2px; background: var(--surface); }
+.section-note { color: var(--muted); font-size: 13.5px; font-weight: 400; }
+
+dialog.viewer { border: 0; padding: 0; background: none; max-width: 96vw; max-height: 96vh; }
+dialog.viewer::backdrop { background: rgb(10 12 14 / .85); }
+dialog.viewer img { display: block; max-width: 96vw; max-height: 88vh; border-radius: 6px; }
+dialog.viewer .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: #fff; padding: 8px 2px 0; font-size: 14px; }
+dialog.viewer .bar button, dialog.viewer .bar a { background: none; border: 1px solid rgb(255 255 255 / .4); color: #fff; border-radius: 6px; padding: 5px 12px; text-decoration: none; font-size: 14px; }
+
+/* ---------- Schoology ---------- */
+.sync-box { margin: 26px 10px 0; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.sync-box .status { color: var(--muted); display: block; margin-bottom: 6px; }
+.sync-box .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.small-btn { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 5px 10px; font-size: 14px; }
+.small-btn:hover { border-color: var(--ink); }
+.small-btn[disabled] { opacity: .5; cursor: progress; }
+.sub .src { font-weight: 600; color: var(--ink); }
+.sub a { color: var(--ink); font-weight: 600; }
+.move { border: 0; background: none; color: var(--muted); font-size: 13.5px; padding: 4px 4px; border-radius: 4px; max-width: 9em; }
+.move:hover { background: var(--surface); color: var(--ink); }
+
+dialog.panel { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); padding: 22px; width: min(520px, calc(100vw - 32px)); }
+dialog.panel::backdrop { background: rgb(10 12 14 / .5); }
+dialog.panel h2 { margin: 0 0 4px; font-size: 24px; }
+dialog.panel ol { padding-left: 20px; margin: 12px 0 16px; line-height: 1.6; }
+dialog.panel input { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 6px; }
+dialog.panel .err { color: var(--danger); font-size: 14px; min-height: 1.4em; margin: 0 0 10px; }
+dialog.panel .buttons { display: flex; gap: 8px; justify-content: flex-end; }
+dialog.panel .ghost { background: none; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px; }
+@media (max-width: 760px) { .sync-box { margin: 10px 16px 0; padding-top: 10px; } }
+
+/* ---------- token gate ---------- */
+.gate { max-width: 420px; margin: 18vh auto; padding: 0 16px; }
+.gate h1 { font-size: 34px; margin: 0 0 8px; }
+.gate p { color: var(--muted); margin: 0 0 18px; }
+.gate form { display: flex; gap: 8px; }
+.gate input { flex: 1; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 10px 12px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(20px); opacity: 0;
+  background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px;
+  transition: opacity .2s, transform .2s; pointer-events: none; display: flex; gap: 12px; align-items: center;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.toast button { background: none; border: 0; color: var(--amber); font-weight: 700; padding: 0; }
+
+/* ---------- mobile ---------- */
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 0 10px; }
+  .brand { padding: 0 16px 10px; }
+  .nav { display: flex; overflow-x: auto; gap: 6px; padding: 0 16px; scrollbar-width: none; }
+  .nav li { flex: none; }
+  .nav button { padding: 7px 12px; border: 1px solid var(--line); white-space: nowrap; }
+  .nav-group { display: none; }
+  .add-proj-item { display: list-item; }
+  .nav .add-proj { border-style: dashed; }
+  main { padding: 20px 16px 80px; }
+  .task { grid-template-columns: 26px 1fr; }
+  .task .actions { grid-column: 2; opacity: 1; margin: -4px 0 0 -8px; flex-wrap: wrap; min-width: 0; }
+  .task > div { min-width: 0; }
+  .sync-box .status { margin-bottom: 4px; }
+  .task.high::before { left: -8px; }
+}
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="file-picker" accept="image/*,application/pdf" multiple hidden>
+<dialog class="panel" id="sg-dialog" aria-labelledby="sg-title">
+  <form id="sg-form" method="dialog">
+    <h2 id="sg-title" class="wide">Connect Schoology</h2>
+    <ol>
+      <li>In Schoology, open <strong>Settings</strong>.</li>
+      <li>Find the calendar link (iCal) and copy it.</li>
+      <li>Paste it here.</li>
+    </ol>
+    <label class="sr" for="sg-url">Schoology calendar link</label>
+    <input id="sg-url" type="password" placeholder="webcal://lms.fcps.edu/calendar/feed/ical/…" autocomplete="off" required>
+    <p class="err" id="sg-err" role="alert"></p>
+    <div class="buttons"><button type="button" class="ghost" id="sg-cancel">Cancel</button><button class="primary" type="submit">Connect and sync</button></div>
+  </form>
+</dialog>
+<dialog class="viewer" id="viewer" aria-label="Attachment preview">
+  <img id="viewer-img" alt="">
+  <div class="bar"><span id="viewer-name"></span><span><a id="viewer-dl" target="_blank" rel="noopener">Open in Drive</a> <button type="button" id="viewer-close">Close</button></span></div>
+</dialog>
+
+<script>
+const TOKEN_KEY = "hub.token";
+const state = { projects: [], tasks: [], attachments: [], schoology: { connected: false, last_sync: null }, syncing: false, open: new Set(), view: "today", draft: { high: false, today: false, due: "" } };
+const $root = document.getElementById("root");
+
+// ---------- storage ----------
+function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } }
+function setToken(t) { try { localStorage.setItem(TOKEN_KEY, t); } catch {} }
+
+// ---------- api ----------
+// In Apps Script there's no web server: calls go to Code.gs through google.script.run.
+// Your Google sign-in protects the page, so there's no password screen.
+class AuthError extends Error {}
+function gs(fn, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(err => reject(new Error(String((err && err.message) || err).replace(/^(Hub)?Error:\s*/, ""))))[fn](...args);
+  });
+}
+async function api(path, opts = {}) {
+  const out = await gs("api", opts.method || "GET", path, opts.body ? JSON.stringify(opts.body) : null);
+  return out == null ? null : JSON.parse(out);
+}
+
+async function load() {
+  try {
+    const [projects, tasks, attachments, sg] = await Promise.all([
+      api("/api/projects"), api("/api/tasks?done_days=7"), api("/api/attachments"), api("/api/schoology")]);
+    state.projects = projects; state.tasks = tasks; state.attachments = attachments; state.schoology = sg;
+    render();
+    maybeAutoSync();
+  } catch (e) {
+    if (e instanceof AuthError) return renderGate();
+    $root.innerHTML = `<div class="gate"><h1 class="wide">Something went wrong</h1><p>${esc(e.message)}</p><p>Check your connection, then reload the page.</p></div>`;
+  }
+}
+
+async function run(fn, okMsg) {
+  try { await fn(); await load(); if (okMsg) toast(okMsg); }
+  catch (e) { if (e instanceof AuthError) renderGate(); else toast(e.message); }
+}
+
+// ---------- helpers ----------
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function localDate(d = new Date()) {
+  const z = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+}
+function daysBetween(a, b) { return Math.round((new Date(b + "T00:00") - new Date(a + "T00:00")) / 86400000); }
+function project(id) { return state.projects.find(p => p.id === id); }
+function isToday(t) { const today = localDate(); return t.today || (t.due && t.due <= today); }
+// Due in the next 7 days but not on Today yet
+function upcoming() {
+  const today = localDate();
+  return state.tasks
+    .filter(t => !t.done && !isToday(t) && t.due && daysBetween(today, t.due) <= 7)
+    .sort((a, b) => a.due.localeCompare(b.due));
+}
+function doneToday(t) { return t.done && t.completed_at && localDate(new Date(t.completed_at)) === localDate(); }
+
+function dueLabel(due) {
+  if (!due) return "";
+  const diff = daysBetween(localDate(), due);
+  if (diff < 0) return `<span class="overdue">Overdue ${-diff} day${diff === -1 ? "" : "s"}</span>`;
+  if (diff === 0) return `<span class="due-today">Due today</span>`;
+  if (diff === 1) return "Due tomorrow";
+  const d = new Date(due + "T00:00");
+  return "Due " + d.toLocaleDateString(undefined, diff < 7 ? { weekday: "long" } : { month: "short", day: "numeric" });
+}
+
+let toastTimer;
+function toast(msg, undo) {
+  const el = document.getElementById("toast");
+  el.innerHTML = esc(msg) + (undo ? ` <button type="button">Undo</button>` : "");
+  if (undo) el.querySelector("button").onclick = () => { el.classList.remove("show"); undo(); };
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), undo ? 5000 : 2500);
+}
+
+function autosize(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+
+// ---------- views ----------
+function currentProject() { return typeof state.view === "number" ? project(state.view) : null; }
+
+function visibleTasks() {
+  const v = state.view;
+  if (v === "today") return { open: state.tasks.filter(t => !t.done && isToday(t)), done: state.tasks.filter(doneToday) };
+  if (v === "inbox") return { open: state.tasks.filter(t => !t.done && t.project_id == null), done: state.tasks.filter(t => t.done && t.project_id == null) };
+  return { open: state.tasks.filter(t => !t.done && t.project_id === v), done: state.tasks.filter(t => t.done && t.project_id === v) };
+}
+
+function navItem(view, label, count, swatch, extraClass = "") {
+  const cur = state.view === view;
+  return `<li><button type="button" class="${extraClass}" data-view="${view}" aria-current="${cur}">
+    ${swatch ? `<span class="swatch" style="background:${esc(swatch)}"></span>` : ""}
+    <span>${esc(label)}</span>${count ? `<span class="count">${count}</span>` : ""}</button></li>`;
+}
+
+function renderNav() {
+  const todayCount = state.tasks.filter(t => !t.done && isToday(t)).length;
+  const inboxCount = state.tasks.filter(t => !t.done && t.project_id == null).length;
+  const active = state.projects.filter(p => p.status !== "done");
+  const finished = state.projects.filter(p => p.status === "done");
+  return `<aside>
+    <div class="brand wide">Hub</div>
+    <ul class="nav">
+      ${navItem("today", "Today", todayCount)}
+      ${navItem("inbox", "Inbox", inboxCount)}
+    </ul>
+    <div class="nav-group"><span>Projects</span><button type="button" class="link-btn" data-act="new-project">New</button></div>
+    <ul class="nav">
+      ${active.map(p => navItem(p.id, p.name, p.open_tasks, p.color, p.status === "paused" ? "paused" : "")).join("")}
+      <li class="add-proj-item"><button type="button" class="add-proj" data-act="new-project">New project</button></li>
+    </ul>
+    ${finished.length ? `<div class="nav-group"><span>Finished</span></div><ul class="nav">${finished.map(p => navItem(p.id, p.name, 0, p.color, "paused")).join("")}</ul>` : ""}
+    ${syncBox()}
+  </aside>`;
+}
+
+function ago(iso) {
+  if (!iso) return "never";
+  const mins = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  const days = Math.round(hrs / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
+function syncBox() {
+  const sg = state.schoology;
+  if (!sg.connected) {
+    return `<div class="sync-box"><span class="status">Bring in your assignments</span>
+      <div class="row"><button type="button" class="small-btn" data-act="sg-connect">Connect Schoology</button></div></div>`;
+  }
+  return `<div class="sync-box"><span class="status">Schoology synced ${esc(ago(sg.last_sync))}</span>
+    <div class="row">
+      <button type="button" class="small-btn" data-act="sg-sync" ${state.syncing ? "disabled" : ""}>${state.syncing ? "Syncing…" : "Sync now"}</button>
+      <button type="button" class="small-btn" data-act="sg-disconnect">Disconnect</button>
+    </div></div>`;
+}
+
+const CLIP = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 4.5l-5 5a1.4 1.4 0 0 0 2 2l5.5-5.5a2.8 2.8 0 0 0-4-4L3.5 7.5a4.2 4.2 0 0 0 6 6l4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+
+function fileTile(a) {
+  const isPdf = a.content_type === "application/pdf";
+  return `<div class="file" data-att="${a.id}">
+    <button type="button" class="open" data-act="att-open" aria-label="Open ${esc(a.filename)}">
+      ${isPdf ? `<span class="pdf" aria-hidden="true">PDF</span>` : `<img class="thumb" data-thumb="${a.id}" alt="">`}
+      <span class="fname">${esc(a.filename)}</span>
+    </button>
+    <button type="button" class="remove" data-act="att-delete" aria-label="Remove ${esc(a.filename)}">×</button>
+  </div>`;
+}
+
+function taskRow(t) {
+  const p = project(t.project_id);
+  const showTag = state.view === "today" || state.view === "inbox" ? p : null;
+  const pinned = t.today;
+  const files = state.attachments.filter(a => a.task_id === t.id);
+  const expanded = state.open.has(t.id);
+  return `<li class="task ${t.done ? "done" : ""} ${t.priority === 2 ? "high" : ""}" data-id="${t.id}" data-drop="task">
+    <button type="button" class="check" data-act="toggle" aria-label="${t.done ? "Mark not done" : "Mark done"}: ${esc(t.title)}">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div>
+      <input class="title" data-act="rename" value="${esc(t.title)}" aria-label="Task title">
+      <div class="sub">
+        ${showTag ? `<span class="tag"><span class="swatch" style="background:${esc(p.color)}"></span>${esc(p.name)}</span>` : ""}
+        ${t.source === "schoology" ? `<span class="src">Schoology</span>` : ""}
+        ${t.link && t.link.startsWith("https://") ? `<a href="${esc(t.link)}" target="_blank" rel="noopener noreferrer">Open in Schoology</a>` : ""}
+        ${dueLabel(t.done ? null : t.due)}
+        ${t.priority === 2 ? "<span>High priority</span>" : ""}
+        ${files.length ? `<button type="button" class="files-btn" data-act="toggle-files" aria-expanded="${expanded}">${CLIP}${files.length} file${files.length === 1 ? "" : "s"}</button>` : ""}
+      </div>
+      ${expanded && files.length ? `<div class="files">${files.map(fileTile).join("")}</div>` : ""}
+    </div>
+    <div class="actions">
+      ${t.done ? "" : `<button type="button" class="icon-btn" data-act="pin" aria-pressed="${pinned}" title="${pinned ? "Remove from Today" : "Add to Today"}">${pinned ? "On Today" : "Today"}</button>
+      <button type="button" class="icon-btn" data-act="prio" aria-pressed="${t.priority === 2}">High</button>`}
+      <button type="button" class="icon-btn" data-act="attach" aria-label="Attach a photo or PDF to ${esc(t.title)}">Attach</button>
+      ${t.done ? "" : `<label class="sr" for="move-${t.id}">Move ${esc(t.title)} to</label>
+      <select class="move" id="move-${t.id}" data-act="move">
+        <option value="" ${t.project_id == null ? "selected" : ""}>${t.project_id == null ? "Move" : "Inbox"}</option>
+        ${state.projects.filter(x => x.status !== "done").map(x => `<option value="${x.id}" ${x.id === t.project_id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}
+      </select>`}
+      <button type="button" class="icon-btn" data-act="delete" aria-label="Delete task">Delete</button>
+    </div>
+  </li>`;
+}
+
+function renderHeader() {
+  const p = currentProject();
+  if (state.view === "today") {
+    const withSteps = state.projects.filter(x => x.status === "active" && x.next_step.trim());
+    const d = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    return `<p class="view-title">${esc(d)}</p>
+      <h1 class="next wide">Today</h1>
+      ${withSteps.length ? `<p class="view-title"><span class="next-mark">Next steps</span></p>
+      <ul class="nextlist">${withSteps.map(x => `<li><button type="button" data-view="${x.id}">
+        <span class="swatch" style="background:${esc(x.color)}"></span>
+        <span><strong>${esc(x.name)}</strong><span class="step">${esc(x.next_step)}</span></span>
+      </button></li>`).join("")}</ul>` : ""}`;
+  }
+  if (state.view === "inbox") {
+    return `<p class="view-title">Tasks that don't belong to a project yet</p><h1 class="next wide">Inbox</h1>`;
+  }
+  return `<div class="view-title meta">
+      <span class="swatch" style="background:${esc(p.color)}"></span>
+      <input class="name-input" data-act="proj-name" value="${esc(p.name)}" size="${Math.max(4, p.name.length)}" aria-label="Project name">
+      <select data-act="proj-status" aria-label="Project status">
+        ${["active", "paused", "done"].map(s => `<option value="${s}" ${p.status === s ? "selected" : ""}>${{ active: "Active", paused: "Paused", done: "Finished" }[s]}</option>`).join("")}
+      </select>
+      <input type="color" data-act="proj-color" value="${esc(p.color)}" aria-label="Project color">
+    </div>
+    <label class="view-title" for="next-step"><span class="next-mark">Next step</span></label>
+    <textarea id="next-step" class="next wide" data-act="proj-next" rows="1" placeholder="What's the very next thing to do?">${esc(p.next_step)}</textarea>`;
+}
+
+function renderAdd() {
+  const d = state.draft;
+  const where = currentProject() ? `to ${currentProject().name}` : state.view === "today" ? "for today" : "to Inbox";
+  return `<form class="add" data-act="add">
+      <label class="sr" for="new-task">New task</label>
+      <input id="new-task" type="text" placeholder="Add a task ${esc(where)}" autocomplete="off">
+      <button type="button" class="chip" data-act="d-high" aria-pressed="${d.high}">High</button>
+      ${state.view === "today" ? "" : `<button type="button" class="chip" data-act="d-today" aria-pressed="${d.today}">Today</button>`}
+      <label class="chip"><span class="sr">Due date</span><input type="date" data-act="d-due" value="${esc(d.due)}"></label>
+      <button class="primary" type="submit">Add</button>
+    </form>
+    <p class="hint">Type #name to file it under a project, or ! to mark it high priority.</p>`;
+}
+
+function render() {
+  if (typeof state.view === "number" && !currentProject()) state.view = "today";
+  const { open, done } = visibleTasks();
+  const p = currentProject();
+  const emptyMsg = state.view === "today"
+    ? "Nothing on today. Add a task above, or use Today on any task to bring it here."
+    : "No open tasks. Add the first one above.";
+  $root.innerHTML = `<div class="app">${renderNav()}<main>
+    ${renderHeader()}
+    ${renderAdd()}
+    <ul class="tasks">${open.length ? open.map(taskRow).join("") : `<li class="empty">${emptyMsg}</li>`}</ul>
+    ${state.view === "today" && upcoming().length ? `<h2 class="section-h">Coming up <span>${upcoming().length}</span></h2>
+      <ul class="tasks">${upcoming().map(taskRow).join("")}</ul>` : ""}
+    ${done.length ? `<h2 class="section-h">${state.view === "today" ? "Done today" : "Done this week"} <span>${done.length}</span></h2>
+      <ul class="tasks">${done.map(taskRow).join("")}</ul>` : ""}
+    ${p ? `<h2 class="section-h"><span>Files <span class="section-note">Syllabus, rubrics, handouts. You can also drag files here or paste a screenshot.</span></span></h2>
+      <div class="files" data-drop="project">
+        ${state.attachments.filter(a => a.project_id === p.id).map(fileTile).join("")}
+        <button type="button" class="dropzone" data-act="attach-project">Add photo<br>or PDF</button>
+      </div>
+      <h2 class="section-h"><label for="notes">Notes</label></h2>
+      <textarea id="notes" class="notes" data-act="proj-notes" placeholder="Ideas, links, things to remember">${esc(p.notes)}</textarea>
+      <button type="button" class="danger-btn" data-act="proj-delete">Delete project</button>` : ""}
+  </main></div>`;
+  const ns = document.getElementById("next-step");
+  if (ns) autosize(ns);
+  loadThumbs();
+}
+
+// ---------- Schoology ----------
+function syncMessage(r) {
+  const parts = [];
+  parts.push(r.added ? `${r.added} new assignment${r.added === 1 ? "" : "s"}` : "No new assignments");
+  if (r.updated) parts.push(`${r.updated} updated`);
+  if (r.new_projects?.length) parts.push(`New class${r.new_projects.length === 1 ? "" : "es"}: ${r.new_projects.join(", ")}`);
+  return parts.join(". ");
+}
+
+async function syncSchoology(quiet) {
+  if (state.syncing) return;
+  state.syncing = true; render();
+  try {
+    const r = await api("/api/schoology/sync", { method: "POST" });
+    state.syncing = false;
+    await load();
+    if (!quiet || r.added || r.updated) toast(syncMessage(r));
+  } catch (e) {
+    state.syncing = false; render();
+    if (e instanceof AuthError) return renderGate();
+    if (!quiet) toast(e.message);
+  }
+}
+
+function openConnect() {
+  const d = document.getElementById("sg-dialog");
+  document.getElementById("sg-url").value = "";
+  document.getElementById("sg-err").textContent = "";
+  d.showModal();
+}
+document.getElementById("sg-cancel").onclick = () => document.getElementById("sg-dialog").close();
+document.getElementById("sg-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = document.getElementById("sg-err");
+  err.textContent = "";
+  try {
+    await api("/api/schoology", { method: "PUT", body: { url: document.getElementById("sg-url").value } });
+    document.getElementById("sg-dialog").close();
+    await load();
+    syncSchoology(false);
+  } catch (ex) {
+    if (ex instanceof AuthError) { document.getElementById("sg-dialog").close(); return renderGate(); }
+    err.textContent = ex.message;
+  }
+});
+
+// Pull new assignments automatically when you open the hub, at most every 30 minutes
+let autoSynced = false;
+function maybeAutoSync() {
+  const sg = state.schoology;
+  if (autoSynced || !sg.connected) return;
+  autoSynced = true;
+  if (!sg.last_sync || Date.now() - new Date(sg.last_sync) > 30 * 60000) syncSchoology(true);
+}
+
+// ---------- attachments ----------
+// Files live in your Drive; photos are fetched as data to show thumbnails here
+const blobCache = new Map();
+async function blobUrl(id) {
+  if (!blobCache.has(id)) {
+    blobCache.set(id, (async () => {
+      try {
+        const { type, data } = JSON.parse(await gs("getAttachmentData", id));
+        const bin = atob(data);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([bytes], { type }));
+      } catch (e) { blobCache.delete(id); throw new Error("Couldn't load that file"); }
+    })());
+  }
+  return blobCache.get(id);
+}
+
+function toBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+function loadThumbs() {
+  document.querySelectorAll("img[data-thumb]:not([src])").forEach(img => {
+    blobUrl(Number(img.dataset.thumb)).then(u => { img.src = u; }).catch(() => {});
+  });
+}
+
+// Big phone photos are shrunk before upload so they load fast and save Drive space
+async function shrink(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 1_500_000) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch { return file; }
+}
+
+async function uploadFiles(fileList, target) {
+  const files = [...fileList];
+  if (!files.length) return;
+  toast(files.length === 1 ? "Uploading…" : `Uploading ${files.length} files…`);
+  let ok = 0;
+  for (const f of files) {
+    try {
+      const file = await shrink(f);
+      if (file.size > 10 * 1024 * 1024) { toast(`${f.name}: File is over 10 MB. Try a smaller photo or PDF.`); continue; }
+      await gs("uploadAttachment", target.kind, target.id, file.name, await toBase64(file));
+      ok++;
+    } catch (e) { toast(`${f.name}: ${e.message || "upload failed. Check your connection."}`); }
+  }
+  if (target.kind === "task") state.open.add(target.id);
+  await load();
+  if (ok) toast(ok === 1 ? "Attached" : `Attached ${ok} files`);
+}
+
+let pickTarget = null;
+function pickFiles(target) { pickTarget = target; const fp = document.getElementById("file-picker"); fp.value = ""; fp.click(); }
+document.getElementById("file-picker").addEventListener("change", e => { if (pickTarget) uploadFiles(e.target.files, pickTarget); });
+
+async function openAttachment(id) {
+  const a = state.attachments.find(x => x.id === id);
+  if (!a) return;
+  // PDFs open in Google Drive's viewer in a new tab
+  if (a.content_type === "application/pdf") { window.open(a.url, "_blank"); return; }
+  let url;
+  try { url = await blobUrl(id); } catch (e) { return toast(e.message); }
+  document.getElementById("viewer-img").src = url;
+  document.getElementById("viewer-img").alt = a.filename;
+  document.getElementById("viewer-name").textContent = a.filename;
+  document.getElementById("viewer-dl").href = a.url;
+  document.getElementById("viewer").showModal();
+}
+document.getElementById("viewer-close").onclick = () => document.getElementById("viewer").close();
+document.getElementById("viewer").addEventListener("click", e => { if (e.target.id === "viewer") e.target.close(); });
+
+function dropTarget(el) {
+  const zone = el.closest?.("[data-drop]");
+  if (!zone) return null;
+  if (zone.dataset.drop === "task") return { kind: "task", id: Number(zone.dataset.id), el: zone };
+  const p = currentProject();
+  return p ? { kind: "project", id: p.id, el: zone } : null;
+}
+document.addEventListener("dragover", e => {
+  if (!e.dataTransfer?.types.includes("Files")) return;
+  const t = dropTarget(e.target);
+  document.querySelectorAll(".drag-over").forEach(x => x !== t?.el && x.classList.remove("drag-over"));
+  if (t) { e.preventDefault(); t.el.classList.add("drag-over"); }
+});
+document.addEventListener("dragleave", e => { if (!e.relatedTarget || !e.currentTarget.contains?.(e.relatedTarget)) document.querySelectorAll(".drag-over").forEach(x => x.classList.remove("drag-over")); });
+document.addEventListener("drop", e => {
+  const t = dropTarget(e.target);
+  document.querySelectorAll(".drag-over").forEach(x => x.classList.remove("drag-over"));
+  if (!t || !e.dataTransfer?.files.length) return;
+  e.preventDefault();
+  uploadFiles(e.dataTransfer.files, t);
+});
+// Paste a screenshot straight into a project's files
+document.addEventListener("paste", e => {
+  const p = currentProject();
+  if (!p || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) { e.preventDefault(); uploadFiles(files, { kind: "project", id: p.id }); }
+});
+
+function renderGate() {
+  $root.innerHTML = `<div class="gate">
+    <h1 class="wide">Hub</h1>
+    <p>Enter your access token to open your hub. It's the APP_TOKEN value from your server settings.</p>
+    <form id="gate"><label class="sr" for="tok">Access token</label>
+      <input id="tok" type="password" autocomplete="current-password" required>
+      <button class="primary" type="submit">Open</button></form></div>`;
+  document.getElementById("gate").onsubmit = e => { e.preventDefault(); setToken(document.getElementById("tok").value.trim()); load(); };
+  document.getElementById("tok").focus();
+}
+
+// ---------- quick-add parsing ----------
+function parseTask(text) {
+  let title = text, project_id, high = false;
+  const tag = title.match(/(^|\s)#([\w-]+)/);
+  if (tag) {
+    const key = tag[2].toLowerCase().replace(/[-_]/g, "");
+    const match = state.projects.find(p => p.name.toLowerCase().replace(/[\s\-_]/g, "").startsWith(key));
+    if (match) { project_id = match.id; title = title.replace(tag[0], " "); }
+  }
+  if (/(^|\s)!(\s|$)/.test(title)) { high = true; title = title.replace(/(^|\s)!(?=\s|$)/g, " "); }
+  return { title: title.replace(/\s+/g, " ").trim(), project_id, high };
+}
+
+// ---------- events ----------
+document.addEventListener("click", e => {
+  const viewBtn = e.target.closest("[data-view]");
+  if (viewBtn) {
+    const v = viewBtn.dataset.view;
+    state.view = /^\d+$/.test(v) ? Number(v) : v;
+    state.draft = { high: false, today: false, due: "" };
+    render(); window.scrollTo(0, 0);
+    return;
+  }
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act;
+  const row = el.closest(".task");
+  const id = row && Number(row.dataset.id);
+  const t = id && state.tasks.find(x => x.id === id);
+
+  if (act === "toggle") {
+    run(() => api(`/api/tasks/${id}`, { method: "PATCH", body: { done: !t.done } }));
+  } else if (act === "pin") {
+    run(() => api(`/api/tasks/${id}`, { method: "PATCH", body: { today: !t.today } }));
+  } else if (act === "prio") {
+    run(() => api(`/api/tasks/${id}`, { method: "PATCH", body: { priority: t.priority === 2 ? 1 : 2 } }));
+  } else if (act === "delete") {
+    const nFiles = state.attachments.filter(a => a.task_id === id).length;
+    if (nFiles && !confirm(`Delete "${t.title}" and its ${nFiles} attached file${nFiles === 1 ? "" : "s"}?`)) return;
+    const copy = { title: t.title, project_id: t.project_id, priority: t.priority, due: t.due, today: t.today };
+    run(async () => { await api(`/api/tasks/${id}`, { method: "DELETE" }); })
+      .then(() => toast("Task deleted", () => run(() => api("/api/tasks", { method: "POST", body: copy }), "Task restored")));
+  } else if (act === "sg-connect") {
+    openConnect();
+  } else if (act === "sg-sync") {
+    syncSchoology(false);
+  } else if (act === "sg-disconnect") {
+    if (confirm("Disconnect Schoology? Assignments already imported will stay."))
+      run(() => api("/api/schoology", { method: "DELETE" }), "Schoology disconnected");
+  } else if (act === "attach") {
+    pickFiles({ kind: "task", id });
+  } else if (act === "attach-project") {
+    pickFiles({ kind: "project", id: currentProject().id });
+  } else if (act === "toggle-files") {
+    state.open.has(id) ? state.open.delete(id) : state.open.add(id);
+    render();
+  } else if (act === "att-open") {
+    openAttachment(Number(el.closest("[data-att]").dataset.att));
+  } else if (act === "att-delete") {
+    const attId = Number(el.closest("[data-att]").dataset.att);
+    const a = state.attachments.find(x => x.id === attId);
+    if (confirm(`Remove "${a.filename}"?`)) run(() => api(`/api/attachments/${attId}`, { method: "DELETE" }), "File removed");
+  } else if (act === "d-high") {
+    state.draft.high = !state.draft.high; el.setAttribute("aria-pressed", state.draft.high);
+  } else if (act === "d-today") {
+    state.draft.today = !state.draft.today; el.setAttribute("aria-pressed", state.draft.today);
+  } else if (act === "new-project") {
+    const name = prompt("Project name");
+    if (name && name.trim()) run(async () => {
+      const palette = ["#5b8def", "#e0663c", "#3fa36b", "#9b6bd6", "#d4a017", "#2bb3b1", "#d6578f"];
+      const p = await api("/api/projects", { method: "POST", body: { name: name.trim(), color: palette[state.projects.length % palette.length] } });
+      state.view = p.id;
+    }, "Project created");
+  } else if (act === "proj-delete") {
+    const p = currentProject();
+    if (confirm(`Delete "${p.name}" and its ${p.open_tasks} open task${p.open_tasks === 1 ? "" : "s"}? This can't be undone.`))
+      run(async () => { await api(`/api/projects/${p.id}`, { method: "DELETE" }); state.view = "today"; }, "Project deleted");
+  }
+});
+
+document.addEventListener("submit", e => {
+  if (e.target.dataset.act !== "add") return;
+  e.preventDefault();
+  const input = document.getElementById("new-task");
+  const parsed = parseTask(input.value);
+  if (!parsed.title) return;
+  const d = state.draft;
+  const body = {
+    title: parsed.title,
+    project_id: parsed.project_id ?? currentProject()?.id ?? null,
+    priority: parsed.high || d.high ? 2 : 1,
+    due: d.due || null,
+    today: state.view === "today" || d.today,
+  };
+  state.draft = { high: false, today: false, due: "" };
+  run(() => api("/api/tasks", { method: "POST", body })).then(() => document.getElementById("new-task")?.focus());
+});
+
+document.addEventListener("input", e => {
+  if (e.target.dataset.act === "proj-next") autosize(e.target);
+  if (e.target.dataset.act === "d-due") state.draft.due = e.target.value;
+});
+
+// Save edits when a field loses focus or changes
+document.addEventListener("change", e => {
+  const el = e.target, act = el.dataset.act, p = currentProject();
+  const fields = { "proj-name": "name", "proj-status": "status", "proj-color": "color", "proj-next": "next_step", "proj-notes": "notes" };
+  if (fields[act] && p) {
+    const val = act === "proj-name" ? el.value.trim() : el.value;
+    if (act === "proj-name" && !val) { el.value = p.name; return; }
+    run(() => api(`/api/projects/${p.id}`, { method: "PATCH", body: { [fields[act]]: val } }), act === "proj-notes" || act === "proj-next" ? "Saved" : null);
+  } else if (act === "move") {
+    const id = Number(el.closest(".task").dataset.id);
+    const pid = el.value ? Number(el.value) : null;
+    const name = pid ? project(pid).name : "Inbox";
+    run(() => api(`/api/tasks/${id}`, { method: "PATCH", body: { project_id: pid } }), `Moved to ${name}`);
+  } else if (act === "rename") {
+    const id = Number(el.closest(".task").dataset.id);
+    const val = el.value.trim();
+    const t = state.tasks.find(x => x.id === id);
+    if (!val) { el.value = t.title; return; }
+    if (val !== t.title) run(() => api(`/api/tasks/${id}`, { method: "PATCH", body: { title: val } }));
+  }
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.target.dataset.act === "rename" || e.target.dataset.act === "proj-name")) e.target.blur();
+  if (e.key === "Enter" && !e.shiftKey && e.target.dataset.act === "proj-next") { e.preventDefault(); e.target.blur(); }
+  if (e.key === "n" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); document.getElementById("new-task")?.focus(); }
+});
+
+// Refresh when you come back to the tab (keeps phone and desktop in sync)
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+
+load();
+</script>
+</body>
+</html>
