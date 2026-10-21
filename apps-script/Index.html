@@ -225,6 +225,14 @@ h1.title {
 }
 .empty { color: var(--ink-dim); padding: 22px 6px; border-bottom: 1px solid var(--line-faint); }
 
+/* one-tap filing in Inbox */
+.file-to { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 9px; }
+.file-to .lbl { font: 600 12px/1 var(--cond); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); margin-right: 2px; }
+.fileto-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; border: 1px solid var(--line-faint); background: none; padding: 3px 10px 3px 4px; font-size: 14px; max-width: 13em; }
+.fileto-btn span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileto-btn:hover, .fileto-btn:focus-visible { border-color: var(--yellow); color: var(--yellow); }
+.fileto-btn:hover .balloon { border-color: var(--yellow); }
+
 /* inbox tools */
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; }
 .selbar { position: sticky; top: 8px; z-index: 5; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--yellow); color: var(--yellow-ink); padding: 8px 12px; margin: 0 0 12px; font: 600 15px/1.2 var(--cond); letter-spacing: .05em; text-transform: uppercase; }
@@ -553,6 +561,17 @@ function fileTile(a) {
   </div>`;
 }
 
+// Inbox: tap a class to file the assignment there
+function fileToRow(t) {
+  const classes = state.projects.filter(p => p.status === "active");
+  if (!classes.length) return "";
+  return `<div class="file-to" role="group" aria-label="File ${esc(t.title)} under">
+    <span class="lbl">File to</span>
+    ${classes.map(p => `<button type="button" class="fileto-btn" data-act="file-to" data-pid="${p.id}" title="File under ${esc(p.name)}">
+      <span class="balloon sm">${partNo(p.id)}</span><span>${esc(p.name)}</span></button>`).join("")}
+  </div>`;
+}
+
 function taskRow(t) {
   const p = project(t.project_id);
   const showPart = (state.view === "today" || state.view === "inbox") && p;
@@ -575,6 +594,7 @@ function taskRow(t) {
         ${files.length ? `<button type="button" class="files-btn" data-act="toggle-files" aria-expanded="${expanded}">${CLIP}${plural(files.length, "file")}</button>` : ""}
       </div>
       ${expanded && files.length ? `<div class="files">${files.map(fileTile).join("")}</div>` : ""}
+      ${state.view === "inbox" && !t.done && !selecting ? fileToRow(t) : ""}
     </div>
     ${selecting ? "" : `<div class="actions">
       <span class="reveal">
@@ -1048,6 +1068,23 @@ function renderGate() {
   document.getElementById("tok").focus();
 }
 
+// Filing is instant on screen; the server catches up, and a failure puts it back
+async function fileTo(t, pid, undoing = false) {
+  const before = t.project_id;
+  const bump = (id, n) => { const p = project(id); if (p) p.open_tasks += n; };
+  t.project_id = pid; bump(pid, 1); bump(before, -1);
+  render();
+  try {
+    await api(`/api/tasks/${t.id}`, { method: "PATCH", body: { project_id: pid } });
+    if (!undoing) toast(`Filed to ${project(pid)?.name || "Inbox"}`, () => fileTo(t, before, true));
+  } catch (e) {
+    t.project_id = before; bump(pid, -1); bump(before, 1);
+    render();
+    if (e instanceof AuthError) return renderGate();
+    toast(e.message);
+  }
+}
+
 // ---------- quick-add parsing ----------
 function parseTask(text) {
   let title = text, project_id, high = false;
@@ -1099,6 +1136,8 @@ document.addEventListener("click", e => {
     if (state.coach.taskId === id) closeCoach();
     run(async () => { await api(`/api/tasks/${id}`, { method: "DELETE" }); })
       .then(() => toast("Task deleted", () => run(() => api("/api/tasks", { method: "POST", body: copy }), "Task restored")));
+  } else if (act === "file-to") {
+    fileTo(t, Number(el.dataset.pid));
   } else if (act === "coach") {
     openCoach(id);
   } else if (act === "coach-close") {
