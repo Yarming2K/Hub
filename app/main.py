@@ -11,9 +11,10 @@ from typing import Annotated
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
-from . import schoology
+from . import coach, schoology
+from . import rules as sort_rules
 from .db import get_db, migrate
-from .models import Attachment, Project, SyncItem, Task, now_utc
+from .models import Attachment, Project, SortRule, SyncItem, Task, now_utc
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
@@ -357,6 +358,110 @@ def schoology_sync(db: Session = Depends(get_db)):
     except schoology.FeedError as exc:
         db.rollback()
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# ---------- bulk move and sorting rules ----------
+
+class BulkMove(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+    project_id: int | None = None
+
+
+@app.post("/api/tasks/move", dependencies=api)
+def move_tasks(body: BulkMove, db: Session = Depends(get_db)):
+    if body.project_id is not None:
+        _get_or_404(db, Project, body.project_id)
+    tasks = db.scalars(select(Task).where(Task.id.in_(body.ids))).all()
+    for t in tasks:
+        t.project_id = body.project_id
+    db.commit()
+    return {"moved": len(tasks)}
+
+
+class RuleIn(BaseModel):
+    keyword: str = Field(min_length=1, max_length=60)
+    project_id: int
+
+
+class RuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    keyword: str
+    project_id: int
+
+
+@app.get("/api/rules", response_model=list[RuleOut], dependencies=api)
+def list_rules(db: Session = Depends(get_db)):
+    return db.scalars(select(SortRule).order_by(SortRule.id)).all()
+
+
+@app.post("/api/rules", response_model=RuleOut, status_code=201, dependencies=api)
+def create_rule(body: RuleIn, db: Session = Depends(get_db)):
+    _get_or_404(db, Project, body.project_id)
+    keyword = body.keyword.strip()
+    if not keyword:
+        raise HTTPException(status_code=422, detail="Type a word to look for")
+    r = SortRule(keyword=keyword, project_id=body.project_id)
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    return r
+
+
+@app.delete("/api/rules/{rule_id}", status_code=204, dependencies=api)
+def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+    db.delete(_get_or_404(db, SortRule, rule_id))
+    db.commit()
+
+
+@app.post("/api/rules/apply", dependencies=api)
+def apply_rules(db: Session = Depends(get_db)):
+    moved = sort_rules.apply_to_inbox(db)
+    db.commit()
+    return {"moved": moved}
+
+
+# ---------- study coach ----------
+
+class CoachIn(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+
+
+class CoachMsgOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    role: str
+    content: str
+
+
+@app.get("/api/coach", dependencies=api)
+def coach_status():
+    return {"enabled": coach.enabled(), "model": coach.MODEL}
+
+
+@app.get("/api/tasks/{task_id}/coach", response_model=list[CoachMsgOut], dependencies=api)
+def coach_history(task_id: int, db: Session = Depends(get_db)):
+    return coach.history(db, _get_or_404(db, Task, task_id))
+
+
+@app.post("/api/tasks/{task_id}/coach", response_model=CoachMsgOut, dependencies=api)
+def coach_ask(task_id: int, body: CoachIn, db: Session = Depends(get_db)):
+    task = _get_or_404(db, Task, task_id)
+    text = body.message.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Type a question first")
+    try:
+        return coach.ask(db, task, text)
+    except coach.CoachError as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.delete("/api/tasks/{task_id}/coach", status_code=204, dependencies=api)
+def coach_clear(task_id: int, db: Session = Depends(get_db)):
+    task = _get_or_404(db, Task, task_id)
+    for m in list(task.coach_messages):
+        db.delete(m)
+    db.commit()
 
 
 # ---------- front end ----------

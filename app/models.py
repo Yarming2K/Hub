@@ -23,6 +23,7 @@ class Project(Base):
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     attachments: Mapped[list["Attachment"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    rules: Mapped[list["SortRule"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -42,6 +43,33 @@ class Task(Base):
 
     project: Mapped[Project | None] = relationship(back_populates="tasks")
     attachments: Mapped[list["Attachment"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    coach_messages: Mapped[list["CoachMessage"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan", order_by="CoachMessage.id")
+
+
+class SortRule(Base):
+    """Files Inbox assignments into a class when the title contains a keyword."""
+    __tablename__ = "sort_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    keyword: Mapped[str] = mapped_column(String(60))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    project: Mapped[Project] = relationship(back_populates="rules")
+
+
+class CoachMessage(Base):
+    """One turn of the study-coach conversation about a task."""
+    __tablename__ = "coach_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), index=True)
+    role: Mapped[str] = mapped_column(String(10))  # user | assistant
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    task: Mapped[Task] = relationship(back_populates="coach_messages")
 
 
 class SyncItem(Base):

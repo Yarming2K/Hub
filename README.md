@@ -45,6 +45,17 @@ What happens:
 
 Keep the link private. Anyone with it can see your assignments. If it leaks, reset it in Schoology and paste the new one.
 
+## Sorting the Inbox
+
+- **Sorting rules** (Inbox → Sorting rules): "title contains Bio → Biology". New Schoology assignments are filed automatically. **Sort Inbox now** applies the rules to what's already there.
+- **Select to move**: tap several Inbox items and move them to a class in one go.
+
+## Study coach
+
+Each assignment has a **Coach** button. The coach explains, plans, quizzes and gives feedback on your work, but doesn't write answers for you. It can see photos and PDFs attached to that assignment.
+
+To turn it on, add `ANTHROPIC_API_KEY` in Render → the hub service → **Environment**. The key comes from console.anthropic.com; the account must belong to an adult and needs a payment method. Optional settings: `COACH_MODEL` (default `claude-haiku-5-5`) and `COACH_DAILY_LIMIT` (default 80 messages a day).
+
 ## Attaching files
 
 - **On a task** (an assignment): hover the task and click **Attach**, or drag a file onto it.
@@ -67,7 +78,7 @@ python -m pytest tests
 
 ## Roadmap
 
-1. Projects, tasks, next steps, file attachments, Schoology sync (done)
+1. Projects, tasks, next steps, file attachments, Schoology sync, sorting rules, study coach, Blueprint design (done)
 2. Focus timer and stats
 3. Desktop companion: app tracking and focus overlay
 4. AI planner

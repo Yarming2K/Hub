@@ -11,6 +11,12 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_FEED_BYTES = 5 * 1024 * 1024;
 const LOOKBACK_DAYS = 14; // skip Schoology assignments due longer ago than this
 const SCHOOLOGY_HOSTS = ['schoology.com', 'fcps.edu'];
+const COACH_URL = 'https://api.anthropic.com/v1/messages';
+const COACH_MODEL = 'claude-haiku-5-5';
+const COACH_DAILY_LIMIT = 80;
+const COACH_HISTORY = 20;
+const COACH_MAX_FILES = 4;
+const COACH_MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 // Column types for each sheet. A "?" means the value can be empty.
 const SCHEMA = {
@@ -24,6 +30,8 @@ const SCHEMA = {
     file_id: 'str', created_at: 'str',
   },
   sync_items: { uid: 'str', task_id: 'int?' },
+  sort_rules: { id: 'int', keyword: 'str', project_id: 'int' },
+  coach_messages: { id: 'int', task_id: 'int', role: 'str', content: 'str', created_at: 'str' },
 };
 
 // ---------------------------------------------------------------- web app
@@ -65,9 +73,9 @@ function api(method, path, bodyJson) {
 }
 
 function route_(method, parts, query, body) {
-  const [res, id, sub] = parts;
-  const num = id !== undefined ? Number(id) : undefined;
-  const key = `${method} ${res}${id !== undefined ? (res === 'schoology' ? '/' + id : '/:id') : ''}${sub ? '/' + sub : ''}`;
+  const idPart = parts.find(p => /^\d+$/.test(p));
+  const num = idPart !== undefined ? Number(idPart) : undefined;
+  const key = `${method} ${parts.map(p => (/^\d+$/.test(p) ? ':id' : p)).join('/')}`;
   switch (key) {
     case 'GET projects': return listProjects_();
     case 'POST projects': return createProject_(body);
@@ -77,6 +85,15 @@ function route_(method, parts, query, body) {
     case 'POST tasks': return createTask_(body);
     case 'PATCH tasks/:id': return updateTask_(num, body);
     case 'DELETE tasks/:id': return deleteTask_(num);
+    case 'POST tasks/move': return moveTasks_(body);
+    case 'GET rules': return listRules_();
+    case 'POST rules': return createRule_(body);
+    case 'DELETE rules/:id': return deleteRule_(num);
+    case 'POST rules/apply': return applyRules_();
+    case 'GET coach': return { enabled: !!coachKey_(), model: COACH_MODEL };
+    case 'GET tasks/:id/coach': return coachHistory_(num);
+    case 'POST tasks/:id/coach': return coachAsk_(num, body);
+    case 'DELETE tasks/:id/coach': return coachClear_(num);
     case 'GET attachments': return listAttachments_(query);
     case 'DELETE attachments/:id': return deleteAttachment_(num);
     case 'GET schoology': return schoologyStatus_();
@@ -306,6 +323,8 @@ function deleteProject_(id) {
   const taskIds = db.load('tasks').filter(t => t.project_id === id).map(t => t.id);
   removeAttachments_(a => a.project_id === id || taskIds.includes(a.task_id));
   forgetTasks_(taskIds);
+  removeCoachMessages_(taskIds);
+  db.save('sort_rules', db.load('sort_rules').filter(r => r.project_id !== id));
   db.save('tasks', db.load('tasks').filter(t => t.project_id !== id));
   db.save('projects', projects.filter(p => p.id !== id));
   return null;
@@ -374,6 +393,7 @@ function deleteTask_(id) {
   find_(rows, id, 'Task');
   removeAttachments_(a => a.task_id === id);
   forgetTasks_([id]);
+  removeCoachMessages_([id]);
   db.save('tasks', rows.filter(t => t.id !== id));
   return null;
 }
@@ -656,7 +676,8 @@ function applyEvents_(events, today) {
   const known = {};
   items.forEach(s => { known[s.uid] = s; });
   const seen = {};
-  let added = 0, updated = 0, skipped = 0;
+  const rules = sortedRules_();
+  let added = 0, updated = 0, skipped = 0, sorted = 0;
   const newProjects = [];
 
   events.forEach(ev => {
@@ -688,8 +709,10 @@ function applyEvents_(events, today) {
         newProjects.push(project.name);
       }
     }
+    const projectId = project ? project.id : matchRule_(rules, ev.title);
+    if (!project && projectId !== null) sorted++;
     const task = {
-      id: db.nextId('tasks'), project_id: project ? project.id : null, title: ev.title, priority: 1,
+      id: db.nextId('tasks'), project_id: projectId, title: ev.title, priority: 1,
       due: ev.due, today: false, done: false, created_at: nowIso_(), completed_at: null,
       source: 'schoology', link: ev.link,
     };
@@ -702,7 +725,7 @@ function applyEvents_(events, today) {
   if (newProjects.length) db.save('projects', projects);
   if (added || updated) db.save('tasks', tasks);
   if (added) db.save('sync_items', items);
-  return { added, updated, skipped_deleted: skipped, new_projects: newProjects };
+  return { added, updated, skipped_deleted: skipped, sorted, new_projects: newProjects };
 }
 
 function schoologySync_() {
@@ -718,4 +741,214 @@ function schoologySync_() {
     fields_seen: parsed.fields,
     synced_at: syncedAt,
   });
+}
+
+// ---------------------------------------------------------------- bulk move and sorting rules
+
+function moveTasks_(b) {
+  const ids = (b.ids || []).map(Number);
+  if (!ids.length) fail_('Pick at least one task');
+  const projectId = checkProjectId_(b.project_id);
+  const db = db_();
+  const rows = db.load('tasks');
+  let moved = 0;
+  rows.forEach(t => { if (ids.includes(t.id)) { t.project_id = projectId; moved++; } });
+  db.save('tasks', rows);
+  return { moved };
+}
+
+function listRules_() {
+  return db_().load('sort_rules').slice().sort((a, b) => a.id - b.id);
+}
+
+function createRule_(b) {
+  const keyword = String(checkText_(b.keyword, 'Word', 60, true)).trim();
+  if (!keyword) fail_('Type a word to look for');
+  const projectId = checkProjectId_(b.project_id);
+  if (projectId === null) fail_('Pick a class');
+  const db = db_();
+  const r = { id: db.nextId('sort_rules'), keyword, project_id: projectId };
+  db.save('sort_rules', db.load('sort_rules').concat([r]));
+  return r;
+}
+
+function deleteRule_(id) {
+  const db = db_();
+  const rows = db.load('sort_rules');
+  find_(rows, id, 'Rule');
+  db.save('sort_rules', rows.filter(r => r.id !== id));
+  return null;
+}
+
+// Longer keywords first, so "AP Bio" wins over "Bio"
+function sortedRules_() {
+  return db_().load('sort_rules').slice().sort((a, b) => (b.keyword.length - a.keyword.length) || (a.id - b.id));
+}
+
+function matchRule_(rules, title) {
+  const t = String(title).toLowerCase();
+  const hit = rules.find(r => t.indexOf(r.keyword.toLowerCase()) >= 0);
+  return hit ? hit.project_id : null;
+}
+
+function applyRules_() {
+  const rules = sortedRules_();
+  if (!rules.length) return { moved: 0 };
+  const db = db_();
+  const rows = db.load('tasks');
+  let moved = 0;
+  rows.forEach(t => {
+    if (t.project_id !== null || t.done) return;
+    const pid = matchRule_(rules, t.title);
+    if (pid !== null) { t.project_id = pid; moved++; }
+  });
+  if (moved) db.save('tasks', rows);
+  return { moved };
+}
+
+// ---------------------------------------------------------------- study coach
+
+const COACH_SYSTEM = [
+  "You are the study coach inside a student's planner app. You are helping with one assignment.",
+  '',
+  'Assignment: {title}',
+  'Class: {klass}',
+  'Due: {due}',
+  'Today: {today}',
+  '',
+  'How to help:',
+  '- Help them understand, plan and practice: break the work into small steps, explain ideas with your own examples, ask guiding questions, quiz them, and give feedback on work they share.',
+  "- Don't produce work meant to be handed in as-is: no finished essays or paragraphs, no worksheet answers, no full solutions to the assigned problems. If they ask for that, say in one line that you'll help them get there themselves, then give the next best help (questions to outline with, a hint, a worked example on a similar problem with different numbers, or feedback on their draft).",
+  '- Keep every reply short: two or three sentences, or up to five short bullets. One step at a time. Plain words. Bold only the key term. No headings.',
+  '- If worksheet photos or PDFs are attached, use them to understand the task. Say so if a photo is too blurry to read.',
+  '- If they seem behind or stressed, help them pick the single next thing to do. Be encouraging and honest.',
+].join('\n');
+
+function coachKey_() {
+  return PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY') || null;
+}
+
+function prettyDate_(iso) {
+  return Utilities.formatDate(new Date(iso + 'T12:00:00Z'), 'UTC', 'EEEE MMMM d');
+}
+
+function coachHistory_(taskId) {
+  find_(db_().load('tasks'), taskId, 'Task');
+  return db_().load('coach_messages').filter(m => m.task_id === taskId)
+    .sort((a, b) => a.id - b.id).map(m => ({ role: m.role, content: m.content }));
+}
+
+function coachClear_(taskId) {
+  find_(db_().load('tasks'), taskId, 'Task');
+  removeCoachMessages_([taskId]);
+  return null;
+}
+
+function removeCoachMessages_(taskIds) {
+  if (!taskIds.length) return;
+  const db = db_();
+  const rows = db.load('coach_messages');
+  const kept = rows.filter(m => !taskIds.includes(m.task_id));
+  if (kept.length !== rows.length) db.save('coach_messages', kept);
+}
+
+function coachFiles_(taskId) {
+  const blocks = [];
+  const names = [];
+  let total = 0;
+  const files = db_().load('attachments').filter(a => a.task_id === taskId).sort((a, b) => a.id - b.id).slice(0, COACH_MAX_FILES);
+  files.forEach(a => {
+    if (total + a.size > COACH_MAX_FILE_BYTES) return;
+    let data;
+    try {
+      data = Utilities.base64Encode(DriveApp.getFileById(a.file_id).getBlob().getBytes());
+    } catch (e) {
+      return; // file was removed from Drive
+    }
+    if (a.content_type === 'application/pdf') {
+      blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } });
+    } else {
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: a.content_type, data } });
+    }
+    names.push(a.filename);
+    total += a.size;
+  });
+  return { blocks, names };
+}
+
+function coachRequest_(task, history, text) {
+  const project = task.project_id !== null ? db_().load('projects').find(p => p.id === task.project_id) : null;
+  let system = COACH_SYSTEM
+    .replace('{title}', task.title)
+    .replace('{klass}', project ? project.name : 'not set')
+    .replace('{due}', task.due ? prettyDate_(task.due) : 'no due date')
+    .replace('{today}', prettyDate_(todayLocal_()));
+  if (task.link) system += "\nSchoology link (you can't open it): " + task.link;
+
+  let turns = history.slice(-COACH_HISTORY).map(m => ({ role: m.role, content: m.content }));
+  if (turns.length && turns[0].role === 'assistant') turns = turns.slice(1);
+  turns.push({ role: 'user', content: text });
+
+  const files = coachFiles_(task.id);
+  if (files.blocks.length) {
+    const first = turns[0];
+    first.content = files.blocks.concat([
+      { type: 'text', text: 'Attached for this assignment: ' + files.names.join(', ') },
+      { type: 'text', text: first.content },
+    ]);
+  }
+  return { model: COACH_MODEL, max_tokens: 900, system, messages: turns };
+}
+
+function coachCall_(payload) {
+  const key = coachKey_();
+  if (!key) fail_("The coach isn't set up yet. Add ANTHROPIC_API_KEY in Project Settings → Script properties.");
+  let res;
+  try {
+    res = UrlFetchApp.fetch(COACH_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      muteHttpExceptions: true,
+    });
+  } catch (e) {
+    fail_("Couldn't reach the coach. Try again in a moment.");
+  }
+  const code = res.getResponseCode();
+  let body = {};
+  try { body = JSON.parse(res.getContentText()); } catch (e) { body = {}; }
+  if (code === 200) {
+    const text = (body.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    if (!text) fail_("The coach didn't answer. Try asking another way.");
+    return text;
+  }
+  const msg = String((body.error && body.error.message) || '');
+  if (code === 401 || code === 403) fail_('The API key was rejected. Check ANTHROPIC_API_KEY in Script properties.');
+  if (/credit balance/i.test(msg)) fail_('The Anthropic account is out of credit. Add credit at console.anthropic.com.');
+  if (code === 429) fail_('Too many questions too fast. Wait a minute and try again.');
+  if ([500, 502, 503, 529].includes(code)) fail_('The coach is busy right now. Try again in a minute.');
+  console.log('coach error ' + code + ': ' + msg.slice(0, 200));
+  fail_("The coach couldn't answer that. Try again, or remove a large attachment.");
+}
+
+function coachAsk_(taskId, b) {
+  const text = String(checkText_(b.message, 'Message', 8000, true)).trim();
+  if (!text) fail_('Type a question first');
+  const db = db_();
+  const task = find_(db.load('tasks'), taskId, 'Task');
+  const countKey = 'coach_count_' + todayLocal_();
+  const used = Number(props_().getProperty(countKey) || 0);
+  if (used >= COACH_DAILY_LIMIT) fail_(`That's the daily limit of ${COACH_DAILY_LIMIT} coach messages. It resets tomorrow.`);
+
+  const history = db.load('coach_messages').filter(m => m.task_id === taskId).sort((a, b) => a.id - b.id);
+  const reply = coachCall_(coachRequest_(task, history, text));
+  // Only save the turn once the coach has answered, so a failure can simply be retried
+  const now = nowIso_();
+  const rows = db.load('coach_messages');
+  rows.push({ id: db.nextId('coach_messages'), task_id: taskId, role: 'user', content: text, created_at: now });
+  rows.push({ id: db.nextId('coach_messages'), task_id: taskId, role: 'assistant', content: reply, created_at: now });
+  db.save('coach_messages', rows);
+  props_().setProperty(countKey, String(used + 1));
+  return { role: 'assistant', content: reply };
 }

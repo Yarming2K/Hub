@@ -10,6 +10,7 @@ from icalendar import Calendar
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import rules as sort_rules
 from .models import Project, Setting, SyncItem, Task, now_utc
 
 LOCAL_TZ = ZoneInfo(os.environ.get("HUB_TIMEZONE", "America/New_York"))
@@ -162,7 +163,8 @@ def apply_events(db: Session, events: list[dict], today: date | None = None) -> 
     projects = {p.name.lower(): p for p in db.scalars(select(Project))}
     known = {s.uid: s for s in db.scalars(select(SyncItem))}
     seen: set[str] = set()
-    added = updated = skipped = 0
+    rules = sort_rules.load_rules(db)
+    added = updated = skipped = sorted_by_rule = 0
     new_projects: list[str] = []
 
     for ev in events:
@@ -196,14 +198,16 @@ def apply_events(db: Session, events: list[dict], today: date | None = None) -> 
                 projects[project.name.lower()] = project
                 new_projects.append(project.name)
 
-        task = Task(title=ev["title"], due=ev["due"], link=ev["link"], source="schoology",
-                    project_id=project.id if project else None)
+        project_id = project.id if project else sort_rules.match(rules, ev["title"])
+        sorted_by_rule += project is None and project_id is not None
+        task = Task(title=ev["title"], due=ev["due"], link=ev["link"], source="schoology", project_id=project_id)
         db.add(task)
         db.flush()
         db.add(SyncItem(uid=ev["uid"], task_id=task.id))
         added += 1
 
-    return {"added": added, "updated": updated, "skipped_deleted": skipped, "new_projects": new_projects}
+    return {"added": added, "updated": updated, "skipped_deleted": skipped, "sorted": sorted_by_rule,
+            "new_projects": new_projects}
 
 
 def sync(db: Session) -> dict:
@@ -212,6 +216,9 @@ def sync(db: Session) -> dict:
         raise FeedError("Schoology isn't connected yet.")
     events, fields = parse_feed(fetch_feed(url))
     result = apply_events(db, events)
+    # Field names and counts only (no assignment content), to help tune class detection
+    print(f"[hub] schoology sync: {len(events)} events, "
+          f"{sum(1 for e in events if e['course'])} with a class, fields={','.join(fields)}", flush=True)
     result.update({
         "events_in_feed": len(events),
         "with_course": sum(1 for e in events if e["course"]),
