@@ -464,6 +464,63 @@ def coach_clear(task_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+# ---------- home-screen widget ----------
+# One small read for the iPhone widget (widget/HubWidget.js): every project plus the counts it draws
+
+@app.get("/api/widget", dependencies=api)
+def widget_summary(
+    today: date | None = Query(default=None, description="The phone's local date; defaults to the server's"),
+    db: Session = Depends(get_db),
+):
+    today = today or date.today()
+    week_ago = now_utc() - timedelta(days=7)
+
+    def is_recent(t: Task) -> bool:
+        done_at = t.completed_at
+        if done_at is not None and done_at.tzinfo is None:
+            done_at = done_at.replace(tzinfo=timezone.utc)
+        return t.done and done_at is not None and done_at >= week_ago
+
+    def next_due(tasks: list[Task]) -> dict | None:
+        dated = sorted((t for t in tasks if not t.done and t.due), key=lambda t: (t.due, -t.priority))
+        return {"title": dated[0].title, "due": dated[0].due.isoformat()} if dated else None
+
+    projects = db.scalars(select(Project).order_by(Project.created_at)).all()
+    out = []
+    for p in projects:
+        if p.status == "done":
+            continue
+        open_tasks = [t for t in p.tasks if not t.done]
+        out.append({
+            "id": p.id,
+            "name": p.name,
+            "color": p.color,
+            "status": p.status,
+            "next_step": p.next_step,
+            "open": len(open_tasks),
+            "done": len(p.tasks) - len(open_tasks),
+            "done_week": sum(1 for t in p.tasks if is_recent(t)),
+            "overdue": sum(1 for t in open_tasks if t.due and t.due < today),
+            "next_due": next_due(p.tasks),
+        })
+    # Busiest projects first: overdue, then open work
+    out.sort(key=lambda x: (x["status"] != "active", -x["overdue"], -x["open"]))
+
+    open_all = db.scalars(select(Task).where(Task.done.is_(False))).all()
+    recent = db.scalars(select(Task).where(Task.done.is_(True), Task.completed_at >= week_ago)).all()
+    return {
+        "today": today.isoformat(),
+        "projects": out,
+        "totals": {
+            "open": len(open_all),
+            "inbox": sum(1 for t in open_all if t.project_id is None),
+            "overdue": sum(1 for t in open_all if t.due and t.due < today),
+            "due_today": sum(1 for t in open_all if t.due == today or t.today),
+            "done_week": len(recent),
+        },
+    }
+
+
 # ---------- front end ----------
 
 @app.get("/", include_in_schema=False)

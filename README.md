@@ -64,6 +64,10 @@ To turn it on, add `ANTHROPIC_API_KEY` in Render → the hub service → **Envir
 - On a phone, **Attach** lets you take a photo with the camera.
 - Files are stored in the database. The free database holds 1 GB, which is a few thousand photos.
 
+## iPhone widget
+
+A home-screen widget shows every project with a progress ring, open and late counts, and what's due next. It runs in the free Scriptable app. Setup is in [widget/README.md](widget/README.md).
+
 ## API
 
 Every `/api/*` route except `/api/health` needs `Authorization: Bearer <APP_TOKEN>`.

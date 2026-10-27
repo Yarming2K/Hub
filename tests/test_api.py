@@ -90,3 +90,22 @@ def test_attachments():
     assert client.get(f"/api/attachments/{a.json()['id']}/file").status_code == 404
     client.delete(f"/api/projects/{p['id']}")
     assert client.get(f"/api/attachments?project_id={p['id']}").json() == []
+
+
+def test_widget_summary():
+    p = client.post("/api/projects", json={"name": "Widget Chem", "color": "#e5534b", "next_step": "Read ch. 4"}).json()
+    client.post("/api/tasks", json={"title": "Late lab", "project_id": p["id"], "due": "2026-01-05"})
+    client.post("/api/tasks", json={"title": "Quiz", "project_id": p["id"], "due": "2026-01-12"})
+    t = client.post("/api/tasks", json={"title": "Notes", "project_id": p["id"]}).json()
+    client.patch(f"/api/tasks/{t['id']}", json={"done": True})
+    gone = client.post("/api/projects", json={"name": "Finished thing", "status": "done"}).json()
+
+    r = client.get("/api/widget?today=2026-01-10")
+    assert r.status_code == 200
+    body = r.json()
+    w = next(x for x in body["projects"] if x["id"] == p["id"])
+    assert (w["open"], w["done"], w["done_week"], w["overdue"]) == (2, 1, 1, 1)
+    assert w["next_due"] == {"title": "Late lab", "due": "2026-01-05"}
+    assert w["next_step"] == "Read ch. 4"
+    assert not any(x["id"] == gone["id"] for x in body["projects"])
+    assert body["totals"]["overdue"] >= 1 and body["totals"]["done_week"] >= 1
